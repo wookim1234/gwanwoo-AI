@@ -3,6 +3,7 @@ package com.example.chatai
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
@@ -13,187 +14,635 @@ import java.io.File
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
+
     private val worker = Executors.newSingleThreadExecutor()
+
     private var llm: LlmInference? = null
+
     private lateinit var status: TextView
     private lateinit var chatBox: LinearLayout
     private lateinit var scroll: ScrollView
     private lateinit var input: EditText
-    private val modelFile by lazy { File(filesDir, "model.task") }
 
-    private val colorBg = Color.parseColor("#0F1115")
-    private val colorCard = Color.parseColor("#1C1F26")
-    private val colorAccent = Color.parseColor("#6C8CFF")
-    private val colorUser = Color.parseColor("#2F4A8A")
-    private val colorAi = Color.parseColor("#262A33")
-    private val colorText = Color.parseColor("#EDEFF5")
-    private val colorSub = Color.parseColor("#9AA3B2")
+    private val modelFile by lazy {
+        File(filesDir, "model.task")
+    }
 
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+    // 색상
+    private val backgroundColor = Color.parseColor("#FFFFFF")
+    private val inputColor = Color.parseColor("#F3F3F3")
+    private val aiBubbleColor = Color.parseColor("#F1F1F1")
+    private val userBubbleColor = Color.parseColor("#E6F0FF")
 
-    private fun rounded(color: Int, radiusDp: Int): GradientDrawable =
-        GradientDrawable().apply {
+    private val textColor = Color.parseColor("#202124")
+    private val subTextColor = Color.parseColor("#6E6E73")
+    private val blueColor = Color.parseColor("#3478F6")
+
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density).toInt()
+    }
+
+    private fun rounded(
+        color: Int,
+        radius: Int
+    ): GradientDrawable {
+        return GradientDrawable().apply {
             setColor(color)
-            cornerRadius = dp(radiusDp).toFloat()
+            cornerRadius = dp(radius).toFloat()
         }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = colorBg
 
-        val header = TextView(this).apply {
+        window.statusBarColor = backgroundColor
+        window.navigationBarColor = backgroundColor
+
+        // =========================
+        // 상단 헤더
+        // =========================
+
+        val menuButton = TextView(this).apply {
+            text = "☰"
+            textSize = 27f
+            gravity = Gravity.CENTER
+            setTextColor(textColor)
+        }
+
+        val title = TextView(this).apply {
             text = "gwanwoo AI"
             textSize = 20f
-            setTextColor(colorText)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(dp(20), dp(18), dp(20), dp(18))
-            setBackgroundColor(colorCard)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(textColor)
         }
 
-        status = TextView(this).apply {
-            textSize = 13f
-            setTextColor(colorSub)
-            text = "모델 파일을 선택하세요"
-            setPadding(dp(20), dp(10), dp(20), dp(6))
-        }
+        val modelButton = TextView(this).apply {
+            text = "⋮"
+            textSize = 28f
+            gravity = Gravity.CENTER
+            setTextColor(textColor)
 
-        val pick = Button(this).apply {
-            text = "모델 파일 선택 (.task)"
-            isAllCaps = false
-            setTextColor(colorText)
-            background = rounded(colorAccent, 12)
             setOnClickListener {
-                val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "*/*"
-                }
-                startActivityForResult(i, 1)
+                openModelPicker()
             }
         }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(backgroundColor)
+
+            setPadding(
+                dp(16),
+                dp(10),
+                dp(16),
+                dp(10)
+            )
+
+            addView(
+                menuButton,
+                LinearLayout.LayoutParams(
+                    dp(48),
+                    dp(48)
+                )
+            )
+
+            addView(
+                title,
+                LinearLayout.LayoutParams(
+                    0,
+                    dp(48),
+                    1f
+                )
+            )
+
+            addView(
+                modelButton,
+                LinearLayout.LayoutParams(
+                    dp(48),
+                    dp(48)
+                )
+            )
+        }
+
+        // =========================
+        // 처음 화면 안내
+        // =========================
+
+        val welcome = TextView(this).apply {
+            text = "무엇을 도와드릴까요?"
+            textSize = 27f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(textColor)
+            gravity = Gravity.CENTER
+        }
+
+        val description = TextView(this).apply {
+            text = "gwanwoo AI에게 질문해 보세요"
+            textSize = 15f
+            setTextColor(subTextColor)
+            gravity = Gravity.CENTER
+        }
+
+        val welcomeBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+
+            addView(
+                welcome,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+
+            addView(
+                description,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dp(8)
+                }
+            )
+        }
+
+        // =========================
+        // 채팅 영역
+        // =========================
 
         chatBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(8), dp(14), dp(8))
+
+            setPadding(
+                dp(16),
+                dp(12),
+                dp(16),
+                dp(16)
+            )
         }
+
+        chatBox.addView(
+            welcomeBox,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+
         scroll = ScrollView(this).apply {
-            setBackgroundColor(colorBg)
+            setBackgroundColor(backgroundColor)
+            isFillViewport = true
             addView(chatBox)
         }
 
+        // =========================
+        // 모델 상태
+        // =========================
+
+        status = TextView(this).apply {
+            text = "모델 파일을 선택하세요"
+            textSize = 12f
+            setTextColor(subTextColor)
+            gravity = Gravity.CENTER
+            setPadding(
+                dp(16),
+                dp(5),
+                dp(16),
+                dp(5)
+            )
+        }
+
+        // =========================
+        // 입력창
+        // =========================
+
         input = EditText(this).apply {
             hint = "메시지를 입력하세요"
-            setHintTextColor(colorSub)
-            setTextColor(colorText)
-            background = rounded(colorAi, 22)
-            setPadding(dp(16), dp(12), dp(16), dp(12))
+            textSize = 16f
+
+            setTextColor(textColor)
+            setHintTextColor(Color.parseColor("#999999"))
+
+            background = null
+
+            setPadding(
+                dp(8),
+                dp(8),
+                dp(8),
+                dp(8)
+            )
+
+            maxLines = 5
         }
 
-        val send = Button(this).apply {
-            text = "보내기"
-            isAllCaps = false
+        // =========================
+        // 보내기 버튼
+        // =========================
+
+        val send = TextView(this).apply {
+            text = "➤"
+            textSize = 20f
+
+            gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            background = rounded(colorAccent, 22)
-            setOnClickListener { ask() }
+
+            background = rounded(
+                blueColor,
+                50
+            )
+
+            setOnClickListener {
+                ask()
+            }
         }
 
-        val inputRow = LinearLayout(this).apply {
+        // =========================
+        // 입력창 바깥
+        // =========================
+
+        val inputContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(12))
-            setBackgroundColor(colorCard)
-            addView(input, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                rightMargin = dp(8)
-            })
-            addView(send)
+
+            background = rounded(
+                inputColor,
+                28
+            )
+
+            setPadding(
+                dp(12),
+                dp(6),
+                dp(8),
+                dp(6)
+            )
+
+            addView(
+                input,
+                LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                )
+            )
+
+            addView(
+                send,
+                LinearLayout.LayoutParams(
+                    dp(46),
+                    dp(46)
+                )
+            )
         }
+
+        // =========================
+        // 하단 입력 영역
+        // =========================
+
+        val bottom = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+
+            setBackgroundColor(backgroundColor)
+
+            setPadding(
+                dp(16),
+                dp(6),
+                dp(16),
+                dp(14)
+            )
+
+            addView(
+                status,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+
+            addView(
+                inputContainer,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+
+        // =========================
+        // 전체 화면
+        // =========================
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(colorBg)
-            addView(header)
-            addView(status)
-            addView(pick, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(dp(16), dp(4), dp(16), dp(8))
-            })
-            addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-            addView(inputRow)
+            setBackgroundColor(backgroundColor)
+
+            addView(
+                header,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+
+            addView(
+                scroll,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f
+                )
+            )
+
+            addView(
+                bottom,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
         }
+
         setContentView(root)
 
-        if (modelFile.exists()) loadModel()
+        // 이미 모델이 있으면 자동 로딩
+        if (modelFile.exists()) {
+            loadModel()
+        }
     }
 
-    private fun addBubble(text: String, isUser: Boolean): TextView {
+    // =========================
+    // 모델 선택
+    // =========================
+
+    private fun openModelPicker() {
+
+        val intent =
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+            }
+
+        startActivityForResult(intent, 1)
+    }
+
+    // =========================
+    // 채팅 버블
+    // =========================
+
+    private fun addBubble(
+        text: String,
+        isUser: Boolean
+    ): TextView {
+
         val tv = TextView(this).apply {
+
             this.text = text
+
             textSize = 15f
-            setTextColor(colorText)
-            setPadding(dp(14), dp(10), dp(14), dp(10))
-            background = rounded(if (isUser) colorUser else colorAi, 16)
-            maxWidth = dp(280)
+            setTextColor(textColor)
+
+            setPadding(
+                dp(15),
+                dp(11),
+                dp(15),
+                dp(11)
+            )
+
+            background = rounded(
+                if (isUser)
+                    userBubbleColor
+                else
+                    aiBubbleColor,
+                18
+            )
+
+            maxWidth = dp(310)
+
+            setLineSpacing(
+                dp(2).toFloat(),
+                1.05f
+            )
         }
-        val lp = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            gravity = if (isUser) Gravity.END else Gravity.START
-            topMargin = dp(8)
+
+        val params =
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+
+                gravity =
+                    if (isUser)
+                        Gravity.END
+                    else
+                        Gravity.START
+
+                topMargin = dp(8)
+            }
+
+        // 처음 안내 문구 제거
+        if (chatBox.childCount > 0) {
+            val first = chatBox.getChildAt(0)
+
+            if (first !is TextView) {
+                chatBox.removeView(first)
+            }
         }
-        chatBox.addView(tv, lp)
-        scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+
+        chatBox.addView(tv, params)
+
+        scroll.post {
+            scroll.fullScroll(View.FOCUS_DOWN)
+        }
+
         return tv
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        val uri = data?.data ?: return
-        if (requestCode != 1 || resultCode != RESULT_OK) return
-        status.text = "모델 복사 중..."
-        worker.execute {
-            contentResolver.openInputStream(uri)?.use { inp ->
-                modelFile.outputStream().use { inp.copyTo(it) }
-            }
-            runOnUiThread { loadModel() }
-        }
-    }
+    // =========================
+    // 파일 선택 결과
+    // =========================
 
-    private fun loadModel() {
-        status.text = "모델 로딩 중..."
-        worker.execute {
-            try {
-                val options = LlmInference.LlmInferenceOptions.builder()
-                    .setModelPath(modelFile.absolutePath)
-                    .setMaxTokens(1024)
-                    .build()
-                llm = LlmInference.createFromOptions(this, options)
-                runOnUiThread { status.text = "● 준비 완료" }
-            } catch (e: Exception) {
-                runOnUiThread { status.text = "로딩 실패: ${e.message}" }
-            }
-        }
-    }
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?
+    ) {
 
-    private fun ask() {
-        val model = llm
-        if (model == null) {
-            status.text = "먼저 모델 파일을 선택하고 로드하세요"
+        super.onActivityResult(
+            requestCode,
+            resultCode,
+            data
+        )
+
+        if (
+            requestCode != 1 ||
+            resultCode != RESULT_OK
+        ) {
             return
         }
-        val q = input.text.toString().trim()
-        if (q.isEmpty()) return
-        input.setText("")
-        addBubble(q, true)
-        val reply = addBubble("생각 중...", false)
+
+        val uri = data?.data ?: return
+
+        status.text = "모델 복사 중..."
+
         worker.execute {
-            val answer = try {
-                model.generateResponse(q)
+
+            try {
+
+                contentResolver
+                    .openInputStream(uri)
+                    ?.use { inputStream ->
+
+                        modelFile.outputStream()
+                            .use { outputStream ->
+
+                                inputStream.copyTo(
+                                    outputStream
+                                )
+                            }
+                    }
+
+                runOnUiThread {
+                    loadModel()
+                }
+
             } catch (e: Exception) {
-                "오류: ${e.message}"
-            }
-            runOnUiThread {
-                reply.text = answer
-                scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+
+                runOnUiThread {
+                    status.text =
+                        "복사 실패: ${e.message}"
+                }
             }
         }
+    }
+
+    // =========================
+    // 모델 로딩
+    // =========================
+
+    private fun loadModel() {
+
+        status.text = "모델 로딩 중..."
+
+        worker.execute {
+
+            try {
+
+                val options =
+                    LlmInference
+                        .LlmInferenceOptions
+                        .builder()
+                        .setModelPath(
+                            modelFile.absolutePath
+                        )
+                        .setMaxTokens(1024)
+                        .build()
+
+                llm =
+                    LlmInference
+                        .createFromOptions(
+                            this,
+                            options
+                        )
+
+                runOnUiThread {
+
+                    status.text =
+                        "● 준비 완료"
+
+                    status.setTextColor(
+                        Color.parseColor("#20A464")
+                    )
+                }
+
+            } catch (e: Exception) {
+
+                runOnUiThread {
+
+                    status.text =
+                        "모델 로딩 실패"
+
+                    status.setTextColor(
+                        Color.RED
+                    )
+                }
+            }
+        }
+    }
+
+    // =========================
+    // 질문 보내기
+    // =========================
+
+    private fun ask() {
+
+        val model = llm
+
+        if (model == null) {
+
+            status.text =
+                "먼저 모델 파일을 선택하세요"
+
+            return
+        }
+
+        val question =
+            input.text
+                .toString()
+                .trim()
+
+        if (question.isEmpty()) {
+            return
+        }
+
+        input.setText("")
+
+        // 사용자 메시지
+        addBubble(
+            question,
+            true
+        )
+
+        // AI 임시 메시지
+        val reply =
+            addBubble(
+                "생각 중...",
+                false
+            )
+
+        worker.execute {
+
+            val answer =
+                try {
+
+                    model.generateResponse(
+                        question
+                    )
+
+                } catch (e: Exception) {
+
+                    "오류: ${e.message}"
+                }
+
+            runOnUiThread {
+
+                reply.text = answer
+
+                scroll.post {
+                    scroll.fullScroll(
+                        View.FOCUS_DOWN
+                    )
+                }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+
+        super.onDestroy()
+
+        worker.shutdown()
+
+        llm = null
     }
 }
