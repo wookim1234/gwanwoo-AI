@@ -1,7 +1,6 @@
 package com.example.chatai
 
 import android.app.Activity
-import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -89,13 +88,11 @@ class MainActivity : Activity() {
 
     /*
      * ==================================================
-     * GitHub Release 모델 주소
-     *
-     * 반드시 네 실제 GitHub Release 주소로 변경
+     * Hugging Face 모델 주소
      * ==================================================
      */
     private val MODEL_URL =
-        "https://github.com/USERNAME/REPOSITORY/releases/download/v1.0/model.litertlm"
+        "https://huggingface.co/litert-community/Qwen3.5-4B/resolve/main/Qwen3.5-4B_mixed_int4.litertlm"
 
     private fun dp(value: Int): Int {
         return (
@@ -162,7 +159,7 @@ class MainActivity : Activity() {
     }
 
     // ==================================================
-    // GitHub Release 모델 다운로드
+    // Hugging Face 모델 다운로드
     // ==================================================
 
     private fun downloadModel() {
@@ -173,18 +170,6 @@ class MainActivity : Activity() {
                 HttpURLConnection? = null
 
             try {
-
-                if (
-                    MODEL_URL.contains(
-                        "USERNAME/REPOSITORY"
-                    )
-                ) {
-
-                    throw Exception(
-                        "GitHub 모델 주소를 설정해야 합니다.\n\n" +
-                        "MODEL_URL을 실제 GitHub Release 주소로 변경하세요."
-                    )
-                }
 
                 runOnUiThread {
 
@@ -222,7 +207,7 @@ class MainActivity : Activity() {
                 ) {
 
                     throw Exception(
-                        "GitHub 다운로드 실패\n" +
+                        "Hugging Face 다운로드 실패\n" +
                         "HTTP $responseCode"
                     )
                 }
