@@ -2,13 +2,10 @@ package com.example.chatai
 
 import android.app.Activity
 import android.content.Intent
-import android.database.Cursor
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.net.Uri
 import android.os.Bundle
-import android.provider.OpenableColumns
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
@@ -33,6 +30,8 @@ import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
@@ -88,6 +87,16 @@ class MainActivity : Activity() {
     private val colorLine =
         Color.rgb(225, 225, 225)
 
+    /*
+     * ==================================================
+     * GitHub Release 모델 주소
+     *
+     * 반드시 네 실제 GitHub Release 주소로 변경
+     * ==================================================
+     */
+    private val MODEL_URL =
+        "https://github.com/USERNAME/REPOSITORY/releases/download/v1.0/model.litertlm"
+
     private fun dp(value: Int): Int {
         return (
             value *
@@ -124,17 +133,297 @@ class MainActivity : Activity() {
 
         createNewChat()
 
+        prepareModel()
+    }
+
+    // ==================================================
+    // 모델 준비
+    // ==================================================
+
+    private fun prepareModel() {
+
         if (
             modelFile.exists() &&
             modelFile.length() > 0
         ) {
+
             status.text =
-                "Qwen3.5-4B 모델 확인 중..."
+                "Qwen3.5-4B 모델 확인 완료\n모델 로딩 중..."
 
             loadModel()
-        } else {
-            status.text =
-                "Qwen3.5-4B 모델을 선택하세요"
+
+            return
+        }
+
+        status.text =
+            "Qwen3.5-4B 모델 다운로드 준비 중..."
+
+        downloadModel()
+    }
+
+    // ==================================================
+    // GitHub Release 모델 다운로드
+    // ==================================================
+
+    private fun downloadModel() {
+
+        worker.execute {
+
+            var connection:
+                HttpURLConnection? = null
+
+            try {
+
+                if (
+                    MODEL_URL.contains(
+                        "USERNAME/REPOSITORY"
+                    )
+                ) {
+
+                    throw Exception(
+                        "GitHub 모델 주소를 설정해야 합니다.\n\n" +
+                        "MODEL_URL을 실제 GitHub Release 주소로 변경하세요."
+                    )
+                }
+
+                runOnUiThread {
+
+                    status.text =
+                        "Qwen3.5-4B 모델 다운로드 중...\n" +
+                        "연결 중"
+                }
+
+                val url =
+                    URL(MODEL_URL)
+
+                connection =
+                    url.openConnection()
+                        as HttpURLConnection
+
+                connection.connectTimeout =
+                    15000
+
+                connection.readTimeout =
+                    30000
+
+                connection.instanceFollowRedirects =
+                    true
+
+                connection.requestMethod =
+                    "GET"
+
+                connection.connect()
+
+                val responseCode =
+                    connection.responseCode
+
+                if (
+                    responseCode !in 200..299
+                ) {
+
+                    throw Exception(
+                        "GitHub 다운로드 실패\n" +
+                        "HTTP $responseCode"
+                    )
+                }
+
+                val totalBytes =
+                    connection.contentLengthLong
+
+                val input =
+                    BufferedInputStream(
+                        connection.inputStream,
+                        1024 * 1024
+                    )
+
+                var downloaded =
+                    0L
+
+                var lastUpdate =
+                    System.currentTimeMillis()
+
+                input.use {
+
+                    FileOutputStream(
+                        tempModelFile
+                    ).use { fileOutput ->
+
+                        BufferedOutputStream(
+                            fileOutput,
+                            1024 * 1024
+                        ).use { output ->
+
+                            val buffer =
+                                ByteArray(
+                                    1024 * 1024
+                                )
+
+                            while (true) {
+
+                                val count =
+                                    it.read(
+                                        buffer
+                                    )
+
+                                if (
+                                    count < 0
+                                ) {
+                                    break
+                                }
+
+                                output.write(
+                                    buffer,
+                                    0,
+                                    count
+                                )
+
+                                downloaded +=
+                                    count
+
+                                val now =
+                                    System
+                                        .currentTimeMillis()
+
+                                if (
+                                    now -
+                                    lastUpdate >=
+                                    250
+                                ) {
+
+                                    lastUpdate =
+                                        now
+
+                                    val downloadedText =
+                                        formatBytes(
+                                            downloaded
+                                        )
+
+                                    runOnUiThread {
+
+                                        if (
+                                            totalBytes > 0
+                                        ) {
+
+                                            val progress =
+                                                (
+                                                    downloaded
+                                                        .toDouble() /
+                                                    totalBytes
+                                                        .toDouble() *
+                                                    100.0
+                                                )
+                                                    .toInt()
+                                                    .coerceIn(
+                                                        0,
+                                                        100
+                                                    )
+
+                                            status.text =
+                                                "Qwen3.5-4B 모델 다운로드 중... $progress%\n" +
+                                                "$downloadedText / " +
+                                                formatBytes(
+                                                    totalBytes
+                                                )
+
+                                        } else {
+
+                                            status.text =
+                                                "Qwen3.5-4B 모델 다운로드 중...\n" +
+                                                downloadedText
+                                        }
+                                    }
+                                }
+                            }
+
+                            output.flush()
+                        }
+
+                        try {
+                            fileOutput.fd.sync()
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+
+                val downloadedSize =
+                    tempModelFile.length()
+
+                if (
+                    downloadedSize <= 0
+                ) {
+
+                    throw Exception(
+                        "다운로드된 모델 파일이 0바이트입니다."
+                    )
+                }
+
+                if (
+                    modelFile.exists()
+                ) {
+                    modelFile.delete()
+                }
+
+                if (
+                    !tempModelFile.renameTo(
+                        modelFile
+                    )
+                ) {
+
+                    throw Exception(
+                        "모델 파일을 저장할 수 없습니다."
+                    )
+                }
+
+                if (
+                    !modelFile.exists() ||
+                    modelFile.length() <= 0
+                ) {
+
+                    throw Exception(
+                        "최종 모델 파일이 정상적으로 생성되지 않았습니다."
+                    )
+                }
+
+                runOnUiThread {
+
+                    status.text =
+                        "Qwen3.5-4B 모델 다운로드 완료\n" +
+                        formatBytes(
+                            modelFile.length()
+                        ) +
+                        "\n모델 로딩 중..."
+
+                    loadModel()
+                }
+
+            } catch (e: Exception) {
+
+                try {
+
+                    if (
+                        tempModelFile.exists()
+                    ) {
+                        tempModelFile.delete()
+                    }
+
+                } catch (_: Exception) {
+                }
+
+                runOnUiThread {
+
+                    status.text =
+                        "모델 다운로드 실패\n\n" +
+                        "${e.javaClass.simpleName}\n" +
+                        (
+                            e.message
+                                ?: "알 수 없는 오류"
+                        )
+                }
+
+            } finally {
+
+                connection?.disconnect()
+            }
         }
     }
 
@@ -242,7 +531,7 @@ class MainActivity : Activity() {
             TextView(this).apply {
 
                 text =
-                    "Qwen3.5-4B 모델을 선택하세요"
+                    "Qwen3.5-4B 모델 준비 중..."
 
                 textSize = 13f
 
@@ -259,10 +548,6 @@ class MainActivity : Activity() {
                     dp(10),
                     dp(3)
                 )
-
-                setOnClickListener {
-                    openModelPicker()
-                }
             }
 
         chatBox =
@@ -410,8 +695,6 @@ class MainActivity : Activity() {
 
                 addView(header)
 
-                // 복사 진행률을 2줄로 표시하기 위해
-                // 기존 30dp -> 55dp
                 addView(
                     status,
                     LinearLayout.LayoutParams(
@@ -656,7 +939,7 @@ class MainActivity : Activity() {
             ) {
                 "● 준비 완료"
             } else {
-                "Qwen3.5-4B 모델을 선택하세요"
+                "Qwen3.5-4B 모델 준비 중..."
             }
 
         refreshHistory()
@@ -759,9 +1042,7 @@ class MainActivity : Activity() {
         ) {
 
             status.text =
-                "먼저 Qwen3.5-4B 모델을 선택하세요"
-
-            openModelPicker()
+                "AI 모델을 준비하는 중입니다."
 
             return
         }
@@ -1311,542 +1592,6 @@ class MainActivity : Activity() {
     }
 
     // ==================================================
-    // 모델 선택
-    // ==================================================
-
-    private fun openModelPicker() {
-
-        val intent =
-            Intent(
-                Intent.ACTION_OPEN_DOCUMENT
-            ).apply {
-
-                addCategory(
-                    Intent.CATEGORY_OPENABLE
-                )
-
-                type =
-                    "application/octet-stream"
-            }
-
-        startActivityForResult(
-            intent,
-            1001
-        )
-    }
-
-    // ==================================================
-    // 파일 크기 가져오기
-    // ==================================================
-
-    private fun getFileSize(
-        uri: Uri
-    ): Long {
-
-        var cursor: Cursor? = null
-
-        try {
-
-            cursor =
-                contentResolver.query(
-                    uri,
-                    arrayOf(
-                        OpenableColumns.SIZE
-                    ),
-                    null,
-                    null,
-                    null
-                )
-
-            if (
-                cursor != null &&
-                cursor.moveToFirst()
-            ) {
-
-                val index =
-                    cursor.getColumnIndex(
-                        OpenableColumns.SIZE
-                    )
-
-                if (
-                    index >= 0 &&
-                    !cursor.isNull(index)
-                ) {
-
-                    return cursor.getLong(index)
-                }
-            }
-
-        } catch (_: Exception) {
-
-            // 파일 크기를 가져오지 못해도
-            // 복사는 계속 진행한다.
-
-        } finally {
-
-            cursor?.close()
-        }
-
-        return -1L
-    }
-
-    // ==================================================
-    // 모델 선택 결과
-    // ==================================================
-
-    override fun onActivityResult(
-        requestCode: Int,
-        resultCode: Int,
-        data: Intent?
-    ) {
-
-        super.onActivityResult(
-            requestCode,
-            resultCode,
-            data
-        )
-
-        if (
-            requestCode != 1001 ||
-            resultCode != RESULT_OK
-        ) {
-            return
-        }
-
-        val uri =
-            data?.data
-
-        if (uri == null) {
-
-            status.text =
-                "모델 파일을 선택하지 않았습니다."
-
-            return
-        }
-
-        status.text =
-            "모델 파일 확인 중..."
-
-        worker.execute {
-
-            try {
-
-                /*
-                 * 선택한 파일에 대한
-                 * 지속적인 읽기 권한을 요청한다.
-                 */
-                try {
-
-                    contentResolver
-                        .takePersistableUriPermission(
-                            uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        )
-
-                } catch (_: Exception) {
-                }
-
-                /*
-                 * 파일 이름 확인
-                 */
-                var fileName =
-                    "Qwen 모델"
-
-                try {
-
-                    val cursor =
-                        contentResolver.query(
-                            uri,
-                            arrayOf(
-                                OpenableColumns.DISPLAY_NAME
-                            ),
-                            null,
-                            null,
-                            null
-                        )
-
-                    cursor?.use {
-
-                        if (
-                            it.moveToFirst()
-                        ) {
-
-                            val index =
-                                it.getColumnIndex(
-                                    OpenableColumns
-                                        .DISPLAY_NAME
-                                )
-
-                            if (
-                                index >= 0 &&
-                                !it.isNull(index)
-                            ) {
-
-                                fileName =
-                                    it.getString(index)
-                            }
-                        }
-                    }
-
-                } catch (_: Exception) {
-                }
-
-                /*
-                 * 파일 크기 확인
-                 */
-                val sourceSize =
-                    getFileSize(uri)
-
-                runOnUiThread {
-
-                    if (
-                        sourceSize > 0
-                    ) {
-
-                        status.text =
-                            "모델 준비 중...\n" +
-                            "$fileName · " +
-                            formatBytes(
-                                sourceSize
-                            )
-
-                    } else {
-
-                        status.text =
-                            "모델 준비 중...\n" +
-                            fileName
-                    }
-                }
-
-                /*
-                 * 기존 엔진 종료
-                 */
-                try {
-                    conversation?.close()
-                } catch (_: Exception) {
-                }
-
-                conversation = null
-
-                try {
-                    engine?.close()
-                } catch (_: Exception) {
-                }
-
-                engine = null
-
-                /*
-                 * 저장공간 검사
-                 */
-                if (
-                    sourceSize > 0 &&
-                    filesDir.usableSpace <
-                    sourceSize
-                ) {
-
-                    throw Exception(
-                        "저장공간이 부족합니다.\n\n" +
-                        "필요한 공간: " +
-                        formatBytes(
-                            sourceSize
-                        ) +
-                        "\n" +
-                        "사용 가능한 공간: " +
-                        formatBytes(
-                            filesDir.usableSpace
-                        )
-                    )
-                }
-
-                /*
-                 * 기존 임시 파일 삭제
-                 */
-                if (
-                    tempModelFile.exists()
-                ) {
-                    tempModelFile.delete()
-                }
-
-                /*
-                 * 입력 스트림
-                 */
-                val rawInput =
-                    contentResolver
-                        .openInputStream(uri)
-
-                        ?: throw Exception(
-                            "모델 파일을 읽을 수 없습니다."
-                        )
-
-                var copiedBytes =
-                    0L
-
-                var lastUpdate =
-                    System.currentTimeMillis()
-
-                rawInput.use {
-
-                    BufferedInputStream(
-                        it,
-                        1024 * 1024
-                    ).use { inputStream ->
-
-                        FileOutputStream(
-                            tempModelFile
-                        ).use { fileOutput ->
-
-                            BufferedOutputStream(
-                                fileOutput,
-                                1024 * 1024
-                            ).use { outputStream ->
-
-                                val buffer =
-                                    ByteArray(
-                                        1024 * 1024
-                                    )
-
-                                while (true) {
-
-                                    val count =
-                                        inputStream
-                                            .read(
-                                                buffer
-                                            )
-
-                                    if (
-                                        count < 0
-                                    ) {
-                                        break
-                                    }
-
-                                    outputStream.write(
-                                        buffer,
-                                        0,
-                                        count
-                                    )
-
-                                    copiedBytes +=
-                                        count
-
-                                    val now =
-                                        System
-                                            .currentTimeMillis()
-
-                                    /*
-                                     * 250ms마다
-                                     * 화면 갱신
-                                     */
-                                    if (
-                                        now -
-                                        lastUpdate >=
-                                        250
-                                    ) {
-
-                                        lastUpdate =
-                                            now
-
-                                        val copiedText =
-                                            formatBytes(
-                                                copiedBytes
-                                            )
-
-                                        runOnUiThread {
-
-                                            if (
-                                                sourceSize > 0
-                                            ) {
-
-                                                val progress =
-                                                    (
-                                                        copiedBytes
-                                                            .toDouble() /
-                                                        sourceSize
-                                                            .toDouble() *
-                                                        100.0
-                                                    )
-                                                        .toInt()
-                                                        .coerceIn(
-                                                            0,
-                                                            100
-                                                        )
-
-                                                status.text =
-                                                    "Qwen3.5-4B 모델 복사 중... $progress%\n" +
-                                                    "$copiedText / " +
-                                                    formatBytes(
-                                                        sourceSize
-                                                    )
-
-                                            } else {
-
-                                                /*
-                                                 * 전체 크기를
-                                                 * 알 수 없는 경우에도
-                                                 * 반드시 복사 용량을
-                                                 * 보여준다.
-                                                 */
-                                                status.text =
-                                                    "Qwen3.5-4B 모델 복사 중...\n" +
-                                                    "복사됨: " +
-                                                    copiedText
-                                            }
-                                        }
-                                    }
-                                }
-
-                                outputStream.flush()
-                            }
-
-                            try {
-                                fileOutput.fd.sync()
-                            } catch (_: Exception) {
-                            }
-                        }
-                    }
-                }
-
-                /*
-                 * 최종 복사 크기 확인
-                 */
-                val copiedSize =
-                    tempModelFile.length()
-
-                if (
-                    copiedSize <= 0
-                ) {
-
-                    throw Exception(
-                        "복사된 모델 파일이 0바이트입니다."
-                    )
-                }
-
-                /*
-                 * 마지막 진행률을 강제로 표시
-                 */
-                runOnUiThread {
-
-                    if (
-                        sourceSize > 0
-                    ) {
-
-                        status.text =
-                            "Qwen3.5-4B 모델 복사 중... 100%\n" +
-                            "${formatBytes(copiedSize)} / " +
-                            formatBytes(sourceSize)
-
-                    } else {
-
-                        status.text =
-                            "Qwen3.5-4B 모델 복사 완료\n" +
-                            formatBytes(
-                                copiedSize
-                            )
-                    }
-                }
-
-                /*
-                 * 원본 크기를 알고 있는데
-                 * 실제 복사 크기가 다르면 실패 처리
-                 */
-                if (
-                    sourceSize > 0 &&
-                    copiedSize != sourceSize
-                ) {
-
-                    throw Exception(
-                        "파일 복사가 완전히 끝나지 않았습니다.\n\n" +
-                        "원본: " +
-                        formatBytes(
-                            sourceSize
-                        ) +
-                        "\n" +
-                        "복사됨: " +
-                        formatBytes(
-                            copiedSize
-                        )
-                    )
-                }
-
-                /*
-                 * 기존 모델 삭제
-                 */
-                if (
-                    modelFile.exists()
-                ) {
-
-                    if (
-                        !modelFile.delete()
-                    ) {
-
-                        throw Exception(
-                            "기존 모델 파일을 삭제할 수 없습니다."
-                        )
-                    }
-                }
-
-                /*
-                 * 임시 파일 -> 실제 모델 파일
-                 */
-                if (
-                    !tempModelFile.renameTo(
-                        modelFile
-                    )
-                ) {
-
-                    throw Exception(
-                        "모델 파일을 저장할 수 없습니다."
-                    )
-                }
-
-                /*
-                 * 최종 확인
-                 */
-                if (
-                    !modelFile.exists() ||
-                    modelFile.length() <= 0
-                ) {
-
-                    throw Exception(
-                        "최종 모델 파일이 정상적으로 생성되지 않았습니다."
-                    )
-                }
-
-                runOnUiThread {
-
-                    status.text =
-                        "Qwen3.5-4B 모델 로딩 중..."
-
-                    loadModel()
-                }
-
-            } catch (e: Exception) {
-
-                try {
-
-                    if (
-                        tempModelFile.exists()
-                    ) {
-                        tempModelFile.delete()
-                    }
-
-                } catch (_: Exception) {
-                }
-
-                runOnUiThread {
-
-                    status.text =
-                        "모델 복사 실패\n\n" +
-                        "${e.javaClass.simpleName}\n" +
-                        (
-                            e.message
-                                ?: "알 수 없는 오류"
-                        )
-                }
-            }
-        }
-    }
-
-    // ==================================================
     // 파일 크기 표시
     // ==================================================
 
@@ -1946,10 +1691,6 @@ class MainActivity : Activity() {
                         "CPU 엔진 준비 중"
                 }
 
-                /*
-                 * GPU를 사용하지 않고
-                 * CPU만 사용한다.
-                 */
                 val config =
                     EngineConfig(
                         modelPath =
@@ -2022,18 +1763,14 @@ class MainActivity : Activity() {
             } catch (e: Exception) {
 
                 try {
-
                     conversation?.close()
-
                 } catch (_: Exception) {
                 }
 
                 conversation = null
 
                 try {
-
                     engine?.close()
-
                 } catch (_: Exception) {
                 }
 
