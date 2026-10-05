@@ -18,12 +18,6 @@ android {
         versionName = "1.0"
     }
 
-    sourceSets {
-        getByName("main") {
-            assets.srcDirs(emptyList<String>())
-        }
-    }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -40,6 +34,6 @@ kotlin {
 
 dependencies {
     implementation(
-        "com.google.ai.edge.litertlm:litertlm-android:0.17.1"
+        "com.google.ai.edge.litertlm:litertlm-android:0.17.0"
     )
 }
