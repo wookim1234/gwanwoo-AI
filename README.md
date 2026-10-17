@@ -1,8 +1,6 @@
 # gwanwoo-AI
 
-This is gwanwoo ai.
-
-It uses quell ai files.
-
+This is gwanwoo AI.
+It uses quell AI files.
 Made by gwanwoo from south korea
 
